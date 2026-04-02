@@ -1,21 +1,33 @@
 name: Deploy
-
 on:
   push:
     branches:
       - main
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd /opt/production/homeassistant
-            git pull origin main
-            docker compose pull && docker compose up -d
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o cloudflared
+          sudo mv cloudflared /usr/local/bin/cloudflared
+          sudo chmod +x /usr/local/bin/cloudflared
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config << 'SSHEOF'
+          Host ssh.mehmetalikandemir.com.tr
+            HostName ssh.mehmetalikandemir.com.tr
+            User malikandemir
+            IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
+            ProxyCommand cloudflared access ssh --hostname %h
+          SSHEOF
+      - name: Deploy
+        run: |
+          ssh malikandemir@ssh.mehmetalikandemir.com.tr << 'DEPLOY'
+            cd /opt/production/homeassistant && git pull origin main && docker compose pull && docker compose up -d
+          DEPLOY
